@@ -1,259 +1,200 @@
-import type { Express, Request, Response } from "express";
+import type { Express } from "express";
 import { createServer, type Server } from "http";
 import { storage } from "./storage";
 import { setupAuth } from "./auth";
-import { z } from "zod";
-import { insertReviewSchema, insertBookingSchema } from "@shared/schema";
 
 export async function registerRoutes(app: Express): Promise<Server> {
   // Setup authentication routes
   setupAuth(app);
 
-  // API routes
-  // Get all service categories
-  app.get("/api/categories", async (req, res) => {
+  // Service Categories
+  app.get("/api/categories", async (req, res, next) => {
     try {
-      const categories = await storage.getServiceCategories();
+      const categories = await storage.getAllServiceCategories();
       res.json(categories);
-    } catch (err) {
-      res.status(500).json({ message: "Failed to fetch service categories" });
+    } catch (error) {
+      next(error);
     }
   });
 
-  // Get a specific service category by ID
-  app.get("/api/categories/:id", async (req, res) => {
+  app.get("/api/categories/:id", async (req, res, next) => {
     try {
-      const id = parseInt(req.params.id);
-      if (isNaN(id)) {
-        return res.status(400).json({ message: "Invalid category ID" });
-      }
-      
-      const category = await storage.getServiceCategory(id);
+      const category = await storage.getServiceCategory(parseInt(req.params.id));
       if (!category) {
         return res.status(404).json({ message: "Category not found" });
       }
-      
       res.json(category);
-    } catch (err) {
-      res.status(500).json({ message: "Failed to fetch service category" });
+    } catch (error) {
+      next(error);
     }
   });
 
-  // Get service providers
-  app.get("/api/providers", async (req, res) => {
+  // Service Providers
+  app.get("/api/providers", async (req, res, next) => {
     try {
-      const providers = await storage.getProviders();
-      
-      // Don't return password field
-      const safeProviders = providers.map(provider => {
-        const { password, ...safeProvider } = provider;
-        return safeProvider;
-      });
-      
-      res.json(safeProviders);
-    } catch (err) {
-      res.status(500).json({ message: "Failed to fetch service providers" });
+      const providers = await storage.getAllServiceProviders();
+      res.json(providers);
+    } catch (error) {
+      next(error);
     }
   });
 
-  // Get services by category ID
-  app.get("/api/categories/:id/services", async (req, res) => {
+  app.get("/api/providers/top", async (req, res, next) => {
     try {
-      const categoryId = parseInt(req.params.id);
-      if (isNaN(categoryId)) {
-        return res.status(400).json({ message: "Invalid category ID" });
-      }
-      
-      const services = await storage.getServicesByCategory(categoryId);
-      res.json(services);
-    } catch (err) {
-      res.status(500).json({ message: "Failed to fetch services" });
+      const limit = req.query.limit ? parseInt(req.query.limit as string) : 3;
+      const providers = await storage.getTopRatedServiceProviders(limit);
+      res.json(providers);
+    } catch (error) {
+      next(error);
     }
   });
 
-  // Get provider details by ID
-  app.get("/api/providers/:id", async (req, res) => {
+  app.get("/api/providers/:id", async (req, res, next) => {
     try {
-      const providerId = parseInt(req.params.id);
-      if (isNaN(providerId)) {
-        return res.status(400).json({ message: "Invalid provider ID" });
-      }
-      
-      const provider = await storage.getUser(providerId);
-      if (!provider || provider.userType !== "provider") {
+      const provider = await storage.getServiceProvider(parseInt(req.params.id));
+      if (!provider) {
         return res.status(404).json({ message: "Provider not found" });
       }
-      
-      // Don't return password
-      const { password, ...safeProvider } = provider;
-      
-      // Get provider's services
-      const services = await storage.getServicesByProvider(providerId);
-      
-      // Get reviews for this provider
-      const reviews = await storage.getReviewsByProvider(providerId);
-      
-      res.json({
-        provider: safeProvider,
-        services,
-        reviews
-      });
-    } catch (err) {
-      res.status(500).json({ message: "Failed to fetch provider details" });
+      res.json(provider);
+    } catch (error) {
+      next(error);
     }
   });
 
-  // Create a service (for providers)
-  app.post("/api/services", async (req, res) => {
+  app.get("/api/providers/category/:categoryId", async (req, res, next) => {
     try {
-      if (!req.isAuthenticated()) {
-        return res.status(401).json({ message: "Not authenticated" });
-      }
-      
-      if (req.user.userType !== "provider") {
-        return res.status(403).json({ message: "Only providers can create services" });
-      }
-      
-      // Set the providerId from the authenticated user
-      const serviceData = {
-        ...req.body,
-        providerId: req.user.id
-      };
-      
-      const service = await storage.createService(serviceData);
-      res.status(201).json(service);
-    } catch (err) {
-      res.status(500).json({ message: "Failed to create service" });
+      const providers = await storage.getServiceProvidersByCategory(parseInt(req.params.categoryId));
+      res.json(providers);
+    } catch (error) {
+      next(error);
     }
   });
 
-  // Submit a review for a provider
-  app.post("/api/reviews", async (req, res) => {
+  app.get("/api/providers/user/:userId", async (req, res, next) => {
+    try {
+      const provider = await storage.getServiceProviderByUserId(parseInt(req.params.userId));
+      if (!provider) {
+        return res.status(404).json({ message: "Provider not found" });
+      }
+      res.json(provider);
+    } catch (error) {
+      next(error);
+    }
+  });
+
+  // Reviews
+  app.get("/api/reviews/provider/:providerId", async (req, res, next) => {
+    try {
+      const reviews = await storage.getReviewsByProvider(parseInt(req.params.providerId));
+      res.json(reviews);
+    } catch (error) {
+      next(error);
+    }
+  });
+
+  app.post("/api/reviews", async (req, res, next) => {
     try {
       if (!req.isAuthenticated()) {
-        return res.status(401).json({ message: "Not authenticated" });
+        return res.status(401).json({ message: "You must be logged in to submit a review" });
       }
-      
+
+      // Ensure the reviewer is a customer
       if (req.user.userType !== "customer") {
         return res.status(403).json({ message: "Only customers can submit reviews" });
       }
-      
-      // Validate review data
-      const reviewData = insertReviewSchema.parse({
+
+      const review = await storage.createReview({
         ...req.body,
         customerId: req.user.id
       });
       
-      // Ensure provider exists
-      const provider = await storage.getUser(reviewData.providerId);
-      if (!provider || provider.userType !== "provider") {
-        return res.status(404).json({ message: "Provider not found" });
-      }
-      
-      const review = await storage.createReview(reviewData);
       res.status(201).json(review);
-    } catch (err) {
-      if (err instanceof z.ZodError) {
-        return res.status(400).json({ message: "Invalid review data", errors: err.errors });
-      }
-      res.status(500).json({ message: "Failed to submit review" });
+    } catch (error) {
+      next(error);
     }
   });
 
-  // Create a booking request
-  app.post("/api/bookings", async (req, res) => {
+  // Event Requests
+  app.get("/api/requests/customer", async (req, res, next) => {
     try {
       if (!req.isAuthenticated()) {
-        return res.status(401).json({ message: "Not authenticated" });
+        return res.status(401).json({ message: "You must be logged in to view requests" });
       }
-      
+
+      const requests = await storage.getEventRequestsByCustomer(req.user.id);
+      res.json(requests);
+    } catch (error) {
+      next(error);
+    }
+  });
+
+  app.get("/api/requests/provider", async (req, res, next) => {
+    try {
+      if (!req.isAuthenticated()) {
+        return res.status(401).json({ message: "You must be logged in to view requests" });
+      }
+
+      // Get provider profile for this user
+      const provider = await storage.getServiceProviderByUserId(req.user.id);
+      if (!provider) {
+        return res.status(404).json({ message: "Provider profile not found" });
+      }
+
+      const requests = await storage.getEventRequestsByProvider(provider.id);
+      res.json(requests);
+    } catch (error) {
+      next(error);
+    }
+  });
+
+  app.post("/api/requests", async (req, res, next) => {
+    try {
+      if (!req.isAuthenticated()) {
+        return res.status(401).json({ message: "You must be logged in to create a request" });
+      }
+
+      // Ensure the requester is a customer
       if (req.user.userType !== "customer") {
-        return res.status(403).json({ message: "Only customers can create bookings" });
+        return res.status(403).json({ message: "Only customers can create event requests" });
       }
-      
-      // Validate booking data
-      const bookingData = insertBookingSchema.parse({
+
+      const request = await storage.createEventRequest({
         ...req.body,
         customerId: req.user.id
       });
       
-      // Ensure provider exists
-      const provider = await storage.getUser(bookingData.providerId);
-      if (!provider || provider.userType !== "provider") {
-        return res.status(404).json({ message: "Provider not found" });
-      }
-      
-      // Ensure service exists
-      const service = await storage.getService(bookingData.serviceId);
-      if (!service) {
-        return res.status(404).json({ message: "Service not found" });
-      }
-      
-      const booking = await storage.createBooking(bookingData);
-      res.status(201).json(booking);
-    } catch (err) {
-      if (err instanceof z.ZodError) {
-        return res.status(400).json({ message: "Invalid booking data", errors: err.errors });
-      }
-      res.status(500).json({ message: "Failed to create booking" });
+      res.status(201).json(request);
+    } catch (error) {
+      next(error);
     }
   });
 
-  // Get bookings for the current user
-  app.get("/api/bookings", async (req, res) => {
+  app.patch("/api/requests/:id/status", async (req, res, next) => {
     try {
       if (!req.isAuthenticated()) {
-        return res.status(401).json({ message: "Not authenticated" });
+        return res.status(401).json({ message: "You must be logged in to update request status" });
       }
-      
-      let bookings;
-      if (req.user.userType === "customer") {
-        bookings = await storage.getBookingsByCustomer(req.user.id);
-      } else if (req.user.userType === "provider") {
-        bookings = await storage.getBookingsByProvider(req.user.id);
-      } else {
-        return res.status(400).json({ message: "Invalid user type" });
-      }
-      
-      res.json(bookings);
-    } catch (err) {
-      res.status(500).json({ message: "Failed to fetch bookings" });
-    }
-  });
 
-  // Update booking status (for providers)
-  app.patch("/api/bookings/:id/status", async (req, res) => {
-    try {
-      if (!req.isAuthenticated()) {
-        return res.status(401).json({ message: "Not authenticated" });
+      const requestId = parseInt(req.params.id);
+      const status = req.body.status;
+      
+      const request = await storage.getEventRequest(requestId);
+      if (!request) {
+        return res.status(404).json({ message: "Request not found" });
       }
+
+      // Get provider profile for this user to check permissions
+      const provider = await storage.getServiceProviderByUserId(req.user.id);
       
-      if (req.user.userType !== "provider") {
-        return res.status(403).json({ message: "Only providers can update booking status" });
+      // Check if user has permission (either the customer or the provider for this request)
+      if (request.customerId !== req.user.id && (!provider || request.providerId !== provider.id)) {
+        return res.status(403).json({ message: "You don't have permission to update this request" });
       }
-      
-      const bookingId = parseInt(req.params.id);
-      if (isNaN(bookingId)) {
-        return res.status(400).json({ message: "Invalid booking ID" });
-      }
-      
-      const { status } = req.body;
-      if (!status || !["accepted", "rejected", "completed"].includes(status)) {
-        return res.status(400).json({ message: "Invalid status" });
-      }
-      
-      // Ensure booking exists and belongs to this provider
-      const bookings = await storage.getBookingsByProvider(req.user.id);
-      const booking = bookings.find(b => b.id === bookingId);
-      
-      if (!booking) {
-        return res.status(404).json({ message: "Booking not found" });
-      }
-      
-      const updatedBooking = await storage.updateBookingStatus(bookingId, status);
-      res.json(updatedBooking);
-    } catch (err) {
-      res.status(500).json({ message: "Failed to update booking status" });
+
+      const updatedRequest = await storage.updateEventRequestStatus(requestId, status);
+      res.json(updatedRequest);
+    } catch (error) {
+      next(error);
     }
   });
 

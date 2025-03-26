@@ -1,98 +1,128 @@
-import { pgTable, text, serial, integer, boolean, timestamp } from "drizzle-orm/pg-core";
+import { pgTable, text, serial, integer, boolean, timestamp, json, doublePrecision } from "drizzle-orm/pg-core";
 import { createInsertSchema } from "drizzle-zod";
 import { z } from "zod";
 
-// User Model
+// User table for both customers and service providers
 export const users = pgTable("users", {
   id: serial("id").primaryKey(),
   username: text("username").notNull().unique(),
   password: text("password").notNull(),
-  fullName: text("full_name").notNull(),
   email: text("email").notNull().unique(),
-  userType: text("user_type", { enum: ["customer", "provider"] }).notNull(),
-  profilePicture: text("profile_picture"),
-  bio: text("bio"),
-  phone: text("phone"),
-  rating: integer("rating"), // Average rating (1-5) for providers
-  reviewCount: integer("review_count").default(0),
+  fullName: text("full_name").notNull(),
+  userType: text("user_type").notNull(), // 'customer' or 'provider'
+  createdAt: timestamp("created_at").defaultNow().notNull(),
 });
 
-export const insertUserSchema = createInsertSchema(users).omit({
-  id: true,
-});
-
-// Service Categories
+// Service categories
 export const serviceCategories = pgTable("service_categories", {
   id: serial("id").primaryKey(),
-  name: text("name").notNull().unique(),
+  name: text("name").notNull(),
   description: text("description").notNull(),
-  image: text("image").notNull(),
+  imageUrl: text("image_url"),
 });
 
-export const insertServiceCategorySchema = createInsertSchema(serviceCategories).omit({
-  id: true,
-});
-
-// Services offered by providers
-export const services = pgTable("services", {
+// Service providers with additional details
+export const serviceProviders = pgTable("service_providers", {
   id: serial("id").primaryKey(),
-  providerId: integer("provider_id").notNull(),
-  categoryId: integer("category_id").notNull(),
-  title: text("title").notNull(),
+  userId: integer("user_id").notNull().references(() => users.id),
+  companyName: text("company_name").notNull(),
   description: text("description").notNull(),
-  price: text("price").notNull(), // Price range as text (e.g. "$500-$1000")
   location: text("location").notNull(),
-  images: text("images").array(),
-});
-
-export const insertServiceSchema = createInsertSchema(services).omit({
-  id: true,
+  experience: integer("experience").notNull(),
+  contactInfo: text("contact_info"),
+  categoryId: integer("category_id").notNull().references(() => serviceCategories.id),
+  tags: json("tags").$type<string[]>(),
+  rating: doublePrecision("rating").default(0),
+  reviewCount: integer("review_count").default(0),
+  imageUrl: text("image_url"),
 });
 
 // Reviews for service providers
 export const reviews = pgTable("reviews", {
   id: serial("id").primaryKey(),
-  customerId: integer("customer_id").notNull(),
-  providerId: integer("provider_id").notNull(),
-  rating: integer("rating").notNull(), // 1-5 stars
+  providerId: integer("provider_id").notNull().references(() => serviceProviders.id),
+  customerId: integer("customer_id").notNull().references(() => users.id),
+  rating: integer("rating").notNull(),
   comment: text("comment"),
-  createdAt: timestamp("created_at").defaultNow(),
+  createdAt: timestamp("created_at").defaultNow().notNull(),
 });
 
-export const insertReviewSchema = createInsertSchema(reviews).omit({
-  id: true,
-  createdAt: true,
-});
-
-// Event booking requests
-export const bookings = pgTable("bookings", {
+// Event requests from customers
+export const eventRequests = pgTable("event_requests", {
   id: serial("id").primaryKey(),
-  customerId: integer("customer_id").notNull(),
-  providerId: integer("provider_id").notNull(),
-  serviceId: integer("service_id").notNull(),
-  eventDate: timestamp("event_date").notNull(),
-  status: text("status", { enum: ["pending", "accepted", "rejected", "completed"] }).default("pending"),
-  details: text("details"),
-  createdAt: timestamp("created_at").defaultNow(),
+  customerId: integer("customer_id").notNull().references(() => users.id),
+  providerId: integer("provider_id").references(() => serviceProviders.id),
+  categoryId: integer("category_id").notNull().references(() => serviceCategories.id),
+  title: text("title").notNull(),
+  description: text("description").notNull(),
+  eventDate: timestamp("event_date"),
+  status: text("status").notNull().default("pending"), // pending, accepted, completed, cancelled
+  createdAt: timestamp("created_at").defaultNow().notNull(),
 });
 
-export const insertBookingSchema = createInsertSchema(bookings).omit({
-  id: true,
-  createdAt: true,
+// Insert schemas
+export const insertUserSchema = createInsertSchema(users).pick({
+  username: true,
+  password: true,
+  email: true,
+  fullName: true,
+  userType: true,
+});
+
+export const insertServiceCategorySchema = createInsertSchema(serviceCategories).pick({
+  name: true,
+  description: true,
+  imageUrl: true,
+});
+
+export const insertServiceProviderSchema = createInsertSchema(serviceProviders).pick({
+  userId: true,
+  companyName: true,
+  description: true,
+  location: true,
+  experience: true,
+  contactInfo: true,
+  categoryId: true,
+  tags: true,
+  imageUrl: true,
+});
+
+export const insertReviewSchema = createInsertSchema(reviews).pick({
+  providerId: true,
+  customerId: true,
+  rating: true,
+  comment: true,
+});
+
+export const insertEventRequestSchema = createInsertSchema(eventRequests).pick({
+  customerId: true,
+  providerId: true,
+  categoryId: true,
+  title: true,
+  description: true,
+  eventDate: true,
 });
 
 // Type definitions
-export type InsertUser = z.infer<typeof insertUserSchema>;
 export type User = typeof users.$inferSelect;
+export type InsertUser = z.infer<typeof insertUserSchema>;
 
-export type InsertServiceCategory = z.infer<typeof insertServiceCategorySchema>;
 export type ServiceCategory = typeof serviceCategories.$inferSelect;
+export type InsertServiceCategory = z.infer<typeof insertServiceCategorySchema>;
 
-export type InsertService = z.infer<typeof insertServiceSchema>;
-export type Service = typeof services.$inferSelect;
+export type ServiceProvider = typeof serviceProviders.$inferSelect;
+export type InsertServiceProvider = z.infer<typeof insertServiceProviderSchema>;
 
-export type InsertReview = z.infer<typeof insertReviewSchema>;
 export type Review = typeof reviews.$inferSelect;
+export type InsertReview = z.infer<typeof insertReviewSchema>;
 
-export type InsertBooking = z.infer<typeof insertBookingSchema>;
-export type Booking = typeof bookings.$inferSelect;
+export type EventRequest = typeof eventRequests.$inferSelect;
+export type InsertEventRequest = z.infer<typeof insertEventRequestSchema>;
+
+// Authentication schemas
+export const loginSchema = z.object({
+  username: z.string().min(1, "Username is required"),
+  password: z.string().min(1, "Password is required"),
+});
+
+export type LoginData = z.infer<typeof loginSchema>;

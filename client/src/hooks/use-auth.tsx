@@ -4,35 +4,62 @@ import {
   useMutation,
   UseMutationResult,
 } from "@tanstack/react-query";
-import { insertUserSchema, User as SelectUser, InsertUser } from "@shared/schema";
+import { User, InsertUser, loginSchema } from "@shared/schema";
 import { getQueryFn, apiRequest, queryClient } from "../lib/queryClient";
 import { useToast } from "@/hooks/use-toast";
+import { z } from "zod";
 
 type AuthContextType = {
-  user: SelectUser | null;
+  user: User | null;
   isLoading: boolean;
   error: Error | null;
-  loginMutation: UseMutationResult<SelectUser, Error, LoginData>;
+  loginMutation: UseMutationResult<User, Error, LoginData>;
   logoutMutation: UseMutationResult<void, Error, void>;
-  registerMutation: UseMutationResult<SelectUser, Error, RegisterData>;
+  registerCustomerMutation: UseMutationResult<User, Error, CustomerRegisterData>;
+  registerProviderMutation: UseMutationResult<User, Error, ProviderRegisterData>;
 };
 
-type LoginData = {
-  username: string;
-  password: string;
-};
+// Login schema from shared/schema.ts
+type LoginData = z.infer<typeof loginSchema>;
 
-type RegisterData = InsertUser;
+// Customer registration schema
+const customerRegisterSchema = z.object({
+  username: z.string().min(3, "Username must be at least 3 characters"),
+  password: z.string().min(6, "Password must be at least 6 characters"),
+  email: z.string().email("Please enter a valid email"),
+  fullName: z.string().min(2, "Full name is required"),
+  userType: z.literal("customer"),
+});
+
+type CustomerRegisterData = z.infer<typeof customerRegisterSchema>;
+
+// Provider registration schema
+const providerRegisterSchema = z.object({
+  username: z.string().min(3, "Username must be at least 3 characters"),
+  password: z.string().min(6, "Password must be at least 6 characters"),
+  email: z.string().email("Please enter a valid email"),
+  fullName: z.string().min(2, "Full name is required"),
+  userType: z.literal("provider"),
+  companyName: z.string().min(2, "Company name is required"),
+  description: z.string().optional(),
+  location: z.string().optional(),
+  experience: z.number().optional(),
+  categoryId: z.number(),
+  tags: z.array(z.string()).optional(),
+});
+
+type ProviderRegisterData = z.infer<typeof providerRegisterSchema>;
 
 export const AuthContext = createContext<AuthContextType | null>(null);
 
 export function AuthProvider({ children }: { children: ReactNode }) {
   const { toast } = useToast();
+  
   const {
     data: user,
     error,
     isLoading,
-  } = useQuery<SelectUser | null, Error>({
+  } = useQuery<User | null, Error>({
     queryKey: ["/api/user"],
     queryFn: getQueryFn({ on401: "returnNull" }),
   });
@@ -42,7 +69,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       const res = await apiRequest("POST", "/api/login", credentials);
       return await res.json();
     },
-    onSuccess: (user: SelectUser) => {
+    onSuccess: (user: User) => {
       queryClient.setQueryData(["/api/user"], user);
       toast({
         title: "Login successful",
@@ -52,28 +79,49 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     onError: (error: Error) => {
       toast({
         title: "Login failed",
-        description: error.message,
+        description: error.message || "Invalid username or password",
         variant: "destructive",
       });
     },
   });
 
-  const registerMutation = useMutation({
-    mutationFn: async (userData: RegisterData) => {
-      const res = await apiRequest("POST", "/api/register", userData);
+  const registerCustomerMutation = useMutation({
+    mutationFn: async (data: CustomerRegisterData) => {
+      const res = await apiRequest("POST", "/api/register", data);
       return await res.json();
     },
-    onSuccess: (user: SelectUser) => {
+    onSuccess: (user: User) => {
       queryClient.setQueryData(["/api/user"], user);
       toast({
         title: "Registration successful",
-        description: `Welcome to EventCraft, ${user.fullName}!`,
+        description: "Your customer account has been created!",
       });
     },
     onError: (error: Error) => {
       toast({
         title: "Registration failed",
-        description: error.message,
+        description: error.message || "Could not create account. Please try again.",
+        variant: "destructive",
+      });
+    },
+  });
+
+  const registerProviderMutation = useMutation({
+    mutationFn: async (data: ProviderRegisterData) => {
+      const res = await apiRequest("POST", "/api/register", data);
+      return await res.json();
+    },
+    onSuccess: (user: User) => {
+      queryClient.setQueryData(["/api/user"], user);
+      toast({
+        title: "Registration successful",
+        description: "Your service provider account has been created!",
+      });
+    },
+    onError: (error: Error) => {
+      toast({
+        title: "Registration failed",
+        description: error.message || "Could not create account. Please try again.",
         variant: "destructive",
       });
     },
@@ -87,7 +135,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       queryClient.setQueryData(["/api/user"], null);
       toast({
         title: "Logged out",
-        description: "You have been successfully logged out.",
+        description: "You have been logged out successfully.",
       });
     },
     onError: (error: Error) => {
@@ -107,7 +155,8 @@ export function AuthProvider({ children }: { children: ReactNode }) {
         error,
         loginMutation,
         logoutMutation,
-        registerMutation,
+        registerCustomerMutation,
+        registerProviderMutation,
       }}
     >
       {children}

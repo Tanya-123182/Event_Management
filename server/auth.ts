@@ -29,8 +29,11 @@ async function comparePasswords(supplied: string, stored: string) {
 }
 
 export function setupAuth(app: Express) {
+  // Use SESSION_SECRET from env or a default for dev
+  const sessionSecret = process.env.SESSION_SECRET || "eventcraft-dev-secret-key-123";
+  
   const sessionSettings: session.SessionOptions = {
-    secret: process.env.SESSION_SECRET || "eventcraft-secret-key",
+    secret: sessionSecret,
     resave: false,
     saveUninitialized: false,
     store: storage.sessionStore,
@@ -72,62 +75,56 @@ export function setupAuth(app: Express) {
 
   app.post("/api/register", async (req, res, next) => {
     try {
-      const { username, email, password, userType, fullName } = req.body;
-      
-      // Validate required fields
-      if (!username || !email || !password || !userType || !fullName) {
-        return res.status(400).json({ message: "All fields are required" });
-      }
-      
-      // Check if username already exists
-      const existingUsername = await storage.getUserByUsername(username);
+      // Check if username or email already exists
+      const existingUsername = await storage.getUserByUsername(req.body.username);
       if (existingUsername) {
-        return res.status(400).json({ message: "Username already exists" });
+        return res.status(400).send("Username already exists");
       }
-      
-      // Check if email already exists
-      const existingEmail = await storage.getUserByEmail(email);
+
+      const existingEmail = await storage.getUserByEmail(req.body.email);
       if (existingEmail) {
-        return res.status(400).json({ message: "Email already exists" });
-      }
-      
-      // Check valid user type
-      if (userType !== "customer" && userType !== "provider") {
-        return res.status(400).json({ message: "Invalid user type" });
+        return res.status(400).send("Email already exists");
       }
 
       // Create user with hashed password
       const user = await storage.createUser({
         ...req.body,
-        password: await hashPassword(password),
+        password: await hashPassword(req.body.password),
       });
 
-      // Log in the user after registration
+      // If user registered as provider, create provider profile
+      if (req.body.userType === 'provider' && req.body.companyName) {
+        await storage.createServiceProvider({
+          userId: user.id,
+          companyName: req.body.companyName,
+          description: req.body.description || `${req.body.companyName} provides professional event services.`,
+          location: req.body.location || "Not specified",
+          experience: req.body.experience || 1,
+          contactInfo: req.body.email,
+          categoryId: req.body.categoryId || 1,
+          tags: req.body.tags || [],
+          imageUrl: req.body.imageUrl || "",
+        });
+      }
+
+      // Auto login after registration
       req.login(user, (err) => {
         if (err) return next(err);
-        
-        // Return user data without password
-        const { password, ...userWithoutPassword } = user;
-        res.status(201).json(userWithoutPassword);
+        // Remove password from response
+        const userResponse = { ...user };
+        delete userResponse.password;
+        res.status(201).json(userResponse);
       });
-    } catch (err) {
-      next(err);
+    } catch (error) {
+      next(error);
     }
   });
 
-  app.post("/api/login", (req, res, next) => {
-    passport.authenticate("local", (err, user, info) => {
-      if (err) return next(err);
-      if (!user) return res.status(401).json({ message: "Invalid credentials" });
-      
-      req.login(user, (err) => {
-        if (err) return next(err);
-        
-        // Return user data without password
-        const { password, ...userWithoutPassword } = user;
-        res.status(200).json(userWithoutPassword);
-      });
-    })(req, res, next);
+  app.post("/api/login", passport.authenticate("local"), (req, res) => {
+    // Remove password from response
+    const userResponse = { ...req.user };
+    delete userResponse.password;
+    res.status(200).json(userResponse);
   });
 
   app.post("/api/logout", (req, res, next) => {
@@ -139,9 +136,9 @@ export function setupAuth(app: Express) {
 
   app.get("/api/user", (req, res) => {
     if (!req.isAuthenticated()) return res.sendStatus(401);
-    
-    // Return user data without password
-    const { password, ...userWithoutPassword } = req.user;
-    res.json(userWithoutPassword);
+    // Remove password from response
+    const userResponse = { ...req.user };
+    delete userResponse.password;
+    res.json(userResponse);
   });
 }

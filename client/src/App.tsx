@@ -1,27 +1,26 @@
 import { Switch, Route } from "wouter";
-import { queryClient } from "./lib/queryClient";
-import { QueryClientProvider } from "@tanstack/react-query";
 import { Toaster } from "@/components/ui/toaster";
-import { AuthProvider } from "@/hooks/use-auth";
-import { ProtectedRoute } from "@/lib/protected-route";
-
-import Header from "@/components/layout/Header";
-import Footer from "@/components/layout/Footer";
+import NotFound from "@/pages/not-found";
 import HomePage from "@/pages/home-page";
 import AuthPage from "@/pages/auth-page";
-import ServiceCategoryPage from "@/pages/service-category-page";
-import ServiceProviderPage from "@/pages/service-provider-page";
-import DashboardPage from "@/pages/dashboard-page";
-import NotFound from "@/pages/not-found";
+import ServicesPage from "@/pages/services-page";
+import ProvidersPage from "@/pages/providers-page";
+import ProviderDetails from "@/pages/provider-details";
+import CustomerDashboard from "@/pages/dashboard/customer-dashboard";
+import ProviderDashboard from "@/pages/dashboard/provider-dashboard";
+import { ProtectedRoute } from "./lib/protected-route";
+import { AuthProvider } from "./hooks/use-auth";
 
 function Router() {
   return (
     <Switch>
       <Route path="/" component={HomePage} />
       <Route path="/auth" component={AuthPage} />
-      <Route path="/categories/:id" component={ServiceCategoryPage} />
-      <Route path="/providers/:id" component={ServiceProviderPage} />
-      <ProtectedRoute path="/dashboard" component={DashboardPage} />
+      <Route path="/services" component={ServicesPage} />
+      <Route path="/providers" component={ProvidersPage} />
+      <Route path="/provider/:id" component={ProviderDetails} />
+      <ProtectedRoute path="/dashboard/customer" component={CustomerDashboard} />
+      <ProtectedRoute path="/dashboard/provider" component={ProviderDashboard} />
       <Route component={NotFound} />
     </Switch>
   );
@@ -29,18 +28,10 @@ function Router() {
 
 function App() {
   return (
-    <QueryClientProvider client={queryClient}>
-      <AuthProvider>
-        <div className="flex flex-col min-h-screen">
-          <Header />
-          <main className="flex-grow">
-            <Router />
-          </main>
-          <Footer />
-        </div>
-        <Toaster />
-      </AuthProvider>
-    </QueryClientProvider>
+    <AuthProvider>
+      <Router />
+      <Toaster />
+    </AuthProvider>
   );
 }
 
