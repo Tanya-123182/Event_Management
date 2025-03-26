@@ -41,7 +41,7 @@ export default function ProviderCard({ provider }: ProviderCardProps) {
   const displayTags = Array.isArray(provider.tags) ? provider.tags.slice(0, 3) : [];
 
   return (
-    <Link href={`/provider/${provider.id}`} className="block">
+    <Link href={`/providers/${provider.id}`} className="block">
       <div className="bg-white rounded-xl shadow-md overflow-hidden border border-gray-100 hover:shadow-lg transition-all hover:border-primary cursor-pointer">
         <div className="h-56 w-full overflow-hidden relative">
           <img 

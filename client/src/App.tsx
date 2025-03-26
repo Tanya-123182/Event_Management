@@ -19,6 +19,7 @@ function Router() {
       <Route path="/services" component={ServicesPage} />
       <Route path="/providers" component={ProvidersPage} />
       <Route path="/provider/:id" component={ProviderDetails} />
+      <Route path="/providers/:id" component={ProviderDetails} />
       <ProtectedRoute path="/dashboard/customer" component={CustomerDashboard} />
       <ProtectedRoute path="/dashboard/provider" component={ProviderDashboard} />
       <Route component={NotFound} />
