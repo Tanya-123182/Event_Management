@@ -2,11 +2,13 @@ import { useState } from "react";
 import { useForm } from "react-hook-form";
 import { z } from "zod";
 import { zodResolver } from "@hookform/resolvers/zod";
-import { useMutation } from "@tanstack/react-query";
+import { useMutation, useQuery } from "@tanstack/react-query";
 import { apiRequest, queryClient } from "@/lib/queryClient";
 import { useToast } from "@/hooks/use-toast";
 import { useAuth } from "@/hooks/use-auth";
 import { useLocation } from "wouter";
+import { ServiceProvider } from "@shared/schema";
+import BookingSuccessModal from "./booking-success-modal";
 
 import {
   Form,
@@ -43,6 +45,14 @@ export default function EventRequestForm({ providerId, categoryId }: EventReques
   const { toast } = useToast();
   const { user } = useAuth();
   const [, navigate] = useLocation();
+  const [showSuccessModal, setShowSuccessModal] = useState(false);
+  const [bookingData, setBookingData] = useState<{
+    providerName: string;
+    eventTitle?: string;
+    eventDate?: Date;
+  }>({
+    providerName: ""
+  });
   
   const form = useForm<EventRequestFormValues>({
     resolver: zodResolver(eventRequestSchema),
@@ -50,6 +60,12 @@ export default function EventRequestForm({ providerId, categoryId }: EventReques
       title: "",
       description: "",
     },
+  });
+
+  // Query to get provider name
+  const { data: provider } = useQuery<ServiceProvider>({
+    queryKey: [`/api/providers/${providerId}`],
+    enabled: !!providerId,
   });
 
   const requestMutation = useMutation({
@@ -63,17 +79,19 @@ export default function EventRequestForm({ providerId, categoryId }: EventReques
       });
       return await res.json();
     },
-    onSuccess: () => {
-      toast({
-        title: "Request Submitted",
-        description: "Your event request has been sent to the provider.",
+    onSuccess: (_, variables) => {
+      // Set the booking data for the success modal
+      setBookingData({
+        providerName: provider?.companyName || "Service Provider",
+        eventTitle: variables.title,
+        eventDate: variables.eventDate
       });
+      
+      // Show success modal instead of redirecting
+      setShowSuccessModal(true);
       
       // Reset form
       form.reset();
-      
-      // Redirect to customer dashboard
-      navigate("/dashboard/customer");
     },
     onError: (error: Error) => {
       toast({
@@ -98,92 +116,104 @@ export default function EventRequestForm({ providerId, categoryId }: EventReques
   };
 
   return (
-    <Form {...form}>
-      <form onSubmit={form.handleSubmit(onSubmit)} className="space-y-6">
-        <FormField
-          control={form.control}
-          name="title"
-          render={({ field }) => (
-            <FormItem>
-              <FormLabel>Event Title</FormLabel>
-              <FormControl>
-                <Input placeholder="e.g. Summer Wedding" {...field} />
-              </FormControl>
-              <FormMessage />
-            </FormItem>
-          )}
-        />
-        
-        <FormField
-          control={form.control}
-          name="eventDate"
-          render={({ field }) => (
-            <FormItem className="flex flex-col">
-              <FormLabel>Event Date</FormLabel>
-              <Popover>
-                <PopoverTrigger asChild>
-                  <FormControl>
-                    <Button
-                      variant={"outline"}
-                      className={`w-full pl-3 text-left font-normal ${!field.value && "text-muted-foreground"}`}
-                    >
-                      {field.value ? (
-                        format(field.value, "PPP")
-                      ) : (
-                        <span>Select event date</span>
-                      )}
-                      <Calendar className="ml-auto h-4 w-4 opacity-50" />
-                    </Button>
-                  </FormControl>
-                </PopoverTrigger>
-                <PopoverContent className="w-auto p-0" align="start">
-                  <CalendarComponent
-                    mode="single"
-                    selected={field.value}
-                    onSelect={field.onChange}
-                    disabled={(date) => date < new Date()}
-                    initialFocus
+    <>
+      {/* Success Modal */}
+      <BookingSuccessModal
+        open={showSuccessModal}
+        onOpenChange={setShowSuccessModal}
+        providerName={bookingData.providerName}
+        eventTitle={bookingData.eventTitle}
+        eventDate={bookingData.eventDate}
+      />
+      
+      {/* Request Form */}
+      <Form {...form}>
+        <form onSubmit={form.handleSubmit(onSubmit)} className="space-y-6">
+          <FormField
+            control={form.control}
+            name="title"
+            render={({ field }) => (
+              <FormItem>
+                <FormLabel>Event Title</FormLabel>
+                <FormControl>
+                  <Input placeholder="e.g. Summer Wedding" {...field} />
+                </FormControl>
+                <FormMessage />
+              </FormItem>
+            )}
+          />
+          
+          <FormField
+            control={form.control}
+            name="eventDate"
+            render={({ field }) => (
+              <FormItem className="flex flex-col">
+                <FormLabel>Event Date</FormLabel>
+                <Popover>
+                  <PopoverTrigger asChild>
+                    <FormControl>
+                      <Button
+                        variant={"outline"}
+                        className={`w-full pl-3 text-left font-normal ${!field.value && "text-muted-foreground"}`}
+                      >
+                        {field.value ? (
+                          format(field.value, "PPP")
+                        ) : (
+                          <span>Select event date</span>
+                        )}
+                        <Calendar className="ml-auto h-4 w-4 opacity-50" />
+                      </Button>
+                    </FormControl>
+                  </PopoverTrigger>
+                  <PopoverContent className="w-auto p-0" align="start">
+                    <CalendarComponent
+                      mode="single"
+                      selected={field.value}
+                      onSelect={field.onChange}
+                      disabled={(date) => date < new Date()}
+                      initialFocus
+                    />
+                  </PopoverContent>
+                </Popover>
+                <FormMessage />
+              </FormItem>
+            )}
+          />
+          
+          <FormField
+            control={form.control}
+            name="description"
+            render={({ field }) => (
+              <FormItem>
+                <FormLabel>Event Details</FormLabel>
+                <FormControl>
+                  <Textarea 
+                    placeholder="Describe your event, requirements, expected guests, etc."
+                    className="min-h-[150px]"
+                    {...field}
                   />
-                </PopoverContent>
-              </Popover>
-              <FormMessage />
-            </FormItem>
-          )}
-        />
-        
-        <FormField
-          control={form.control}
-          name="description"
-          render={({ field }) => (
-            <FormItem>
-              <FormLabel>Event Details</FormLabel>
-              <FormControl>
-                <Textarea 
-                  placeholder="Describe your event, requirements, expected guests, etc."
-                  className="min-h-[150px]"
-                  {...field}
-                />
-              </FormControl>
-              <FormMessage />
-            </FormItem>
-          )}
-        />
-        
-        <Button 
-          type="submit" 
-          className="w-full md:w-auto"
-          disabled={requestMutation.isPending}
-        >
-          {requestMutation.isPending ? (
-            <>
-              <Loader2 className="mr-2 h-4 w-4 animate-spin" />
-              Submitting Request...
-            </>
-          ) : (
-            "Submit Request"
-          )}
-        </Button>
-      </form>
-    </Form>
+                </FormControl>
+                <FormMessage />
+              </FormItem>
+            )}
+          />
+          
+          <Button 
+            type="submit" 
+            className="w-full md:w-auto"
+            disabled={requestMutation.isPending}
+          >
+            {requestMutation.isPending ? (
+              <>
+                <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+                Submitting Request...
+              </>
+            ) : (
+              "Submit Request"
+            )}
+          </Button>
+        </form>
+      </Form>
+    </>
   );
 }
